@@ -1,0 +1,7 @@
+{
+    "host": "db_waclient",
+    "user": "root",
+    "password": "dbwa2022",
+    "database": "db_wa",
+    "charset": "utf8mb4"
+}

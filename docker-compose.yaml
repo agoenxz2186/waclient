@@ -1,0 +1,24 @@
+version: "3" 
+services:
+  wa:
+    container_name: wa
+    image: agoenxz21/waclient:latest
+    command: node waclient.js 5 
+    volumes: 
+      - ./koneksidb.json:/usr/src/app/koneksidb.json
+      - ./waclient.js:/usr/src/app/waclient.js
+    links:
+      - "db_waclient"
+    depends_on:
+      - db_waclient 
+
+  db_waclient:
+    container_name: db_waclient
+    image: mariadb:10.9.3-jammy
+    environment:
+      MARIADB_ROOT_PASSWORD: dbwa2022
+    volumes:
+      - ./wa_data:/var/lib/mysql
+    ports:
+      - 3309:3306 
+  
