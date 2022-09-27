@@ -14,7 +14,7 @@ var conn = mysql.createPool(require('./koneksidb.json'));
 
 let deviceID = parseInt( `${process.argv[2] ?? '1'}`); 
 var state = 0;
-var exitapp = 0;
+var exitapp = 0; 
 console.log('hello');
 console.log('device id ', deviceID);
 conn.query("REPLACE INTO devices SET ? ", [{
