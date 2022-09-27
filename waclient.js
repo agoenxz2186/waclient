@@ -7,7 +7,8 @@ function sleep(ms) {
     return new Promise((resolve) => {
         setTimeout(resolve, ms);
     });
-}
+} 
+
 console.log('create pool');
 var conn = mysql.createPool(require('./koneksidb.json'));
 
