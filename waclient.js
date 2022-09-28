@@ -1,6 +1,8 @@
 const {Client, LocalAuth} = require('whatsapp-web.js');
 const mysql = require('mysql');
 const { MessageMedia } = require('whatsapp-web.js/src/structures');
+const fs = require('fs');
+const rmdir = require('rimraf');
 
 var client = new Client();
 function sleep(ms) {
@@ -12,11 +14,9 @@ function sleep(ms) {
 console.log('create pool');
 var conn = mysql.createPool(require('./koneksidb.json'));
 
-let deviceID = parseInt( `${process.argv[2] ?? '1'}`); 
-var state = 0;
+let deviceID = parseInt( `${process.argv[2] ?? '1'}`);  
 var exitapp = 0; 
-console.log('hello');
-console.log('device id ', deviceID);
+console.log('DEVIICE ID : ', deviceID);
 conn.query("REPLACE INTO devices SET ? ", [{
     device_id: deviceID,
     state: state, 
@@ -27,75 +27,85 @@ conn.query("REPLACE INTO devices SET ? ", [{
 });
 
 function initWA(){
-    client = new Client({
-        puppeteer: { 
-            executablePath: '/usr/bin/google-chrome',
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', ]
-        },
-        authStrategy: new LocalAuth({
-            clientId: `wa-${deviceID}`,
-            dataPath: `./auth-${deviceID}`
-        })
-    });
+    state = 0;
+    try{
+            client = new Client({
+                puppeteer: { 
+                    executablePath: '/usr/bin/google-chrome',
+                    headless: true,
+                    args: ['--no-sandbox', '--disable-setuid-sandbox', ]
+                },
+                authStrategy: new LocalAuth({
+                    clientId: `wa-${deviceID}`,
+                    dataPath: `./auth-${deviceID}`
+                })
+            });
 
-    client.on('qr', (qr)=>{
-        state = 1;
-        console.log('QR = ', qr);
-        conn.query('UPDATE devices SET ? WHERE device_id = ?', [
-            {qrcode:qr, state: state,  updated_at: new Date(), logout:0}, deviceID
-        ])
-    });
+            client.on('qr', (qr)=>{
+                state = 1;
+                console.log('QR = ', qr);
+                conn.query('UPDATE devices SET ? WHERE device_id = ?', [
+                    {qrcode:qr, state: state,  updated_at: new Date(), logout:0}, deviceID
+                ])
+            });
 
-    client.on('ready', ()=>{
-        state = 2;
-        conn.query('UPDATE devices SET ? WHERE device_id = ?', [
-            {qrcode:'', state: state,  updated_at: new Date(), logout:0}, deviceID
-        ])
-        console.log('WA READY');
-    });
+            client.on('auth_failure', (msg)=>{
+                logout();
+            });
 
-    client.on('message', async(msg)=>{
-      //  console.log('income : ', msg);
-        var media = null;
-        if(msg.hasMedia){
-            media = await msg.downloadMedia();
-        }
-        conn.query("INSERT INTO inbox SET ?", {
-            msg_id: msg.id.id,
-            msg_from: msg.from,
-            msg_to: msg.to,
-            msg_value: msg.type === 'chat' ? msg.body : '',
-            msg_media: msg.type !== 'chat' ? media.data : '',
-            msg_mime: msg.type !== 'chat' ? media.mimetype : '',
-            created_at: new Date()
-        }, (err, res)=>{
-          //  console.log('message incomde error ', err);
-        });
-        
-        let nomor = msg.to.substring(0, msg.to.length-5);
-        conn.query('UPDATE devices SET ? WHERE device_id= ? ', [ {nomorwa:nomor}, deviceID ]);
+            client.on('ready', ()=>{
+                state = 2;
+                conn.query('UPDATE devices SET ? WHERE device_id = ?', [
+                    {qrcode:'', state: state,  updated_at: new Date(), logout:0}, deviceID
+                ])
+                console.log('WA READY');
+            });
 
-    });
+            client.on('message', async(msg)=>{
+            //  console.log('income : ', msg);
+                var media = null;
+                if(msg.hasMedia){
+                    media = await msg.downloadMedia();
+                }
+                conn.query("INSERT INTO inbox SET ?", {
+                    msg_id: msg.id.id,
+                    msg_from: msg.from,
+                    msg_to: msg.to,
+                    msg_value: msg.type === 'chat' ? msg.body : '',
+                    msg_media: msg.type !== 'chat' ? media.data : '',
+                    msg_mime: msg.type !== 'chat' ? media.mimetype : '',
+                    created_at: new Date()
+                }, (err, res)=>{
+                //  console.log('message incomde error ', err);
+                });
+                
+                let nomor = msg.to.substring(0, msg.to.length-5);
+                conn.query('UPDATE devices SET ? WHERE device_id= ? ', [ {nomorwa:nomor}, deviceID ]);
 
-    client.on('message_ack', (msg, ack)=>{
-        conn.query('UPDATE sentitems SET ? WHERE msg_id= ? ', [
-            {ack: ack, updated_at: new Date()}, msg.id.id
-        ], (Err,res)=>{
-          //  console.log('erro msg ack : ',Err);
-        });
-    });
+            });
 
-    client.on('disconnected', (reason)=>{
+            client.on('message_ack', (msg, ack)=>{
+                conn.query('UPDATE sentitems SET ? WHERE msg_id= ? ', [
+                    {ack: ack, updated_at: new Date()}, msg.id.id
+                ], (Err,res)=>{
+                //  console.log('erro msg ack : ',Err);
+                });
+            });
+
+            client.on('disconnected', (reason)=>{
+                state = -1;
+                conn.query('UPDATE devices SET ? WHERE device_id = ?', [
+                    {qrcode: '', state: state, updated_at: new Date()}, deviceID
+                ])
+                
+                console.log('WA DISCONNECTED');
+            });
+
+            client.initialize();
+    }catch(e){
         state = -1;
-        conn.query('UPDATE devices SET ? WHERE device_id = ?', [
-            {qrcode: '', state: state, updated_at: new Date()}, deviceID
-        ])
-        
-        console.log('WA DISCONNECTED');
-    });
-
-    client.initialize();
+        logout(); 
+    }
 
 }
 
@@ -149,13 +159,29 @@ async function sendMsg(msg){
     return null;
 }
 
+async function logout(){
+    conn.query("UPDATE devices SET ? WHERE device_id = ? ", [
+        { state:-1, updated_at: new Date(), qrcode:'' }, deviceID
+    ]);
+    await sleep(2000);
+    try{
+        await client.logout();
+    }catch(e){}
+    try{
+        await client.destroy();
+    }catch(Err){}
+    try{
+        rmdir(`./auth-${deviceID}`, {} );
+    }catch(e){}
+
+    initWA();
+}
+
 function cekLogout(){
     conn.query("SELECT * FROM devices WHERE device_id= ? ", [deviceID], (err,res)=>{
         if(err)return;
         if(res[0].logout == 1){
-            client.logout().then(()=>{
-                state = 0;
-            });
+           logout();
         }
     });
 }
