@@ -17,9 +17,6 @@ services:
     command: node waclient.js 5  
     environment:
       TZ: Asia/Jakarta
-    volumes: 
-      - ./koneksidb.json:/usr/src/app/koneksidb.json
-      - ./waclient.js:/usr/src/app/waclient.js
     links:
       - "db_waclient"
     depends_on:
